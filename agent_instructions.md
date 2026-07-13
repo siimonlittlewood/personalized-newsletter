@@ -64,6 +64,11 @@ re-tuned by hand each time.
 - **Summaries**: 1-3 sentences per headline, grounded strictly in the
   fetched title/description — never invent details not present in the
   source data.
+- **Footer note (permanent)**: always end the email with a short footer
+  commenting on that day's category balance/frequency — e.g. which
+  categories came in thin and why (a quiet news day vs. a genuine source
+  gap), so the reader always knows whether an imbalance is expected. This
+  is a standing feature, not a test-only note.
 
 ## Known ongoing gaps (update this section as sources improve)
 
