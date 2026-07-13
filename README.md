@@ -9,35 +9,30 @@ Each morning it pulls fresh headlines from news APIs and RSS feeds, filters and 
 The pipeline is a two-stage design: a deterministic script handles data fetching (fast, cheap, reliable), and an LLM agent handles the parts that actually need judgment (selection, summarization, and reading freeform email replies).
 
 ```
-┌─────────────────────────┐      ┌──────────────────────────────┐
-│  scripts/fetch_headlines│      │        Scheduled agent        │
-│  .py (deterministic)    │      │       (runs daily, 7:45am)    │
-│                          │      │                                │
-│  • Currents API         │─────▶│  1. Check Gmail for ticker     │
-│    (general news)       │      │     update replies             │
-│  • RSS feeds (niche      │      │  2. Run fetch_headlines.py     │
-│    interests: sports,   │      │  3. Select ~15 headlines per   │
-│    music, fashion,      │      │     the rules in                │
-│    fitness)             │      │     agent_instructions.md       │
-│  • Twelve Data /        │      │  4. Compose + send via          │
-│    yfinance (markets)   │      │     send_email.py (Gmail API)   │
-│                          │      │                                │
-│  → output/latest.json   │      └──────────────────────────────┘
-└─────────────────────────┘
+┌────────────────────────────┐   ┌──────────────────────────────┐
+│ scripts/fetch_headlines.py │    │ Scheduled agent              │
+│ (deterministic)            │    │ (runs daily, 7:45am)         │
+│                            │    │                              │
+│ - News API (general news)  │ ─▶ │ 1. Check Gmail for ticker    │
+│ - RSS feeds (configurable  │    │    update replies            │
+│   per-interest sources)    │    │ 2. Run fetch_headlines.py    │
+│ - Market data APIs         │    │ 3. Select headlines per the  │
+│   (indices + watchlist)    │    │    rules in                  │
+│                            │    │    agent_instructions.md     │
+│ -> output/latest.json      │    │ 4. Compose + send via        │
+│                            │    │    send_email.py (Gmail API) │
+└────────────────────────────┘   └──────────────────────────────┘
 ```
 
 **Why split it this way?** Fetching and tagging headlines doesn't need judgment — it needs to be fast, cheap, and not depend on an LLM correctly reconstructing API calls every morning. Selecting which headlines are actually interesting, writing concise summaries, preserving important context (e.g. "Summer League" vs. a real NBA game), and reading a freeform reply like "add SHOP.TO and AAPL" — those genuinely benefit from an LLM's judgment. So the script does the former, the agent does the latter.
 
 ## Data sources
 
-| Purpose | Source | Notes |
+| Purpose | Source type | Notes |
 |---|---|---|
-| General news | [Currents API](https://currentsapi.services/) | Free tier: 1,000 req/day, commercial use allowed |
-| Sports (Raptors, Oilers) | Raptors Republic, OilersNation RSS | Team-specific coverage general APIs don't have |
-| Music | Pitchfork, Resident Advisor, Mixmag, DJ Mag, HipHopDX RSS | |
-| Fashion | Hypebeast, Highsnobiety, Fashionista RSS | |
-| Fitness | FitnessVolt RSS | |
-| Market indices | [Twelve Data](https://twelvedata.com/) (US) + [yfinance](https://github.com/ranaroussi/yfinance) (Canadian/international) | Twelve Data's free tier only covers US-listed symbols |
+| General news | News aggregation API | Free tier, commercial use allowed |
+| Niche/personalized interests | Configurable RSS feeds | Set per-category in `config/sources.yaml` — swap in whatever's relevant to you |
+| Market indices + watchlist | Market data APIs (split across two providers) | One provider's free tier only covers US-listed symbols, so non-US symbols route through a second, key-free provider |
 | Email delivery | [Gmail API](https://developers.google.com/gmail/api) (OAuth2, HTTPS) | Not SMTP — see Deployment notes below for why |
 | Reading replies | Gmail MCP connector (read-only) | Can't send; drafts/read only, by design |
 
@@ -50,7 +45,7 @@ The full policy the daily agent follows lives in [`agent_instructions.md`](./age
 Runs as a [Claude Code](https://claude.com/claude-code) scheduled cloud agent — a daily cron-triggered session that clones this repo into an isolated sandbox and runs the pipeline. Two things about that sandbox shaped the design:
 
 - **Outbound network is HTTPS-only.** Raw SMTP (ports 465/587) is blocked by the sandbox's proxy, which only permits port 443. That's why email delivery goes through the Gmail API (plain HTTPS + OAuth2) instead of `smtplib`.
-- **No local filesystem.** Secrets (`CURRENTS_API_KEY`, `TWELVEDATA_API_KEY`, `GMAIL_ADDRESS`, `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET`, `GMAIL_OAUTH_REFRESH_TOKEN`) are injected as real environment variables by the cloud environment rather than read from a committed `.env` file — `python-dotenv` falls back to the process environment automatically when no `.env` is present, so the same code works locally and in the cloud without changes.
+- **No local filesystem.** Credentials are injected as real environment variables by the cloud environment rather than read from a committed `.env` file — `python-dotenv` falls back to the process environment automatically when no `.env` is present, so the same code works locally and in the cloud without changes. Nothing sensitive is ever committed to this repo (see `.env.example` for the shape of what's needed, with no real values).
 
 ## Setup
 
