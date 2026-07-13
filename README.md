@@ -1,0 +1,73 @@
+# Personalized Newsletter
+
+A daily email newsletter, tailored to my own interests, that lands in my inbox every morning at 7:45 AM — no manual curation required.
+
+Each morning it pulls fresh headlines from news APIs and RSS feeds, filters and tags them against a configurable list of interests, selects a balanced mix (~80% personalized / ~20% general news), adds a market summary with a personal stock watchlist, and emails the result. The watchlist can be updated just by replying to the email in plain English (e.g. "add SHOP.TO and AAPL").
+
+## How it works
+
+The pipeline is a two-stage design: a deterministic script handles data fetching (fast, cheap, reliable), and an LLM agent handles the parts that actually need judgment (selection, summarization, and reading freeform email replies).
+
+```
+┌─────────────────────────┐      ┌──────────────────────────────┐
+│  scripts/fetch_headlines│      │        Scheduled agent        │
+│  .py (deterministic)    │      │       (runs daily, 7:45am)    │
+│                          │      │                                │
+│  • Currents API         │─────▶│  1. Check Gmail for ticker     │
+│    (general news)       │      │     update replies             │
+│  • RSS feeds (niche      │      │  2. Run fetch_headlines.py     │
+│    interests: sports,   │      │  3. Select ~15 headlines per   │
+│    music, fashion,      │      │     the rules in                │
+│    fitness)             │      │     agent_instructions.md       │
+│  • Twelve Data /        │      │  4. Compose + send via          │
+│    yfinance (markets)   │      │     send_email.py (SMTP)        │
+│                          │      │                                │
+│  → output/latest.json   │      └──────────────────────────────┘
+└─────────────────────────┘
+```
+
+**Why split it this way?** Fetching and tagging headlines doesn't need judgment — it needs to be fast, cheap, and not depend on an LLM correctly reconstructing API calls every morning. Selecting which headlines are actually interesting, writing concise summaries, preserving important context (e.g. "Summer League" vs. a real NBA game), and reading a freeform reply like "add SHOP.TO and AAPL" — those genuinely benefit from an LLM's judgment. So the script does the former, the agent does the latter.
+
+## Data sources
+
+| Purpose | Source | Notes |
+|---|---|---|
+| General news | [Currents API](https://currentsapi.services/) | Free tier: 1,000 req/day, commercial use allowed |
+| Sports (Raptors, Oilers) | Raptors Republic, OilersNation RSS | Team-specific coverage general APIs don't have |
+| Music | Pitchfork, Resident Advisor, Mixmag, DJ Mag, HipHopDX RSS | |
+| Fashion | Hypebeast, Highsnobiety, Fashionista RSS | |
+| Fitness | FitnessVolt RSS | |
+| Market indices | [Twelve Data](https://twelvedata.com/) (US) + [yfinance](https://github.com/ranaroussi/yfinance) (Canadian/international) | Twelve Data's free tier only covers US-listed symbols |
+| Email delivery | Gmail SMTP (App Password) | |
+| Reading replies | Gmail MCP connector (read-only) | |
+
+## Selection rules
+
+The full policy the daily agent follows lives in [`agent_instructions.md`](./agent_instructions.md) — it's written as a standing policy (volume targets, a hard cap of 2 items per interest category, a recency window, rumor/speculation filtering, context-preservation rules) rather than being re-tuned by hand each morning, so it stays consistent regardless of what any given day's headlines look like.
+
+## Setup
+
+1. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+2. Copy `.env.example` to `.env` and fill in:
+   - `CURRENTS_API_KEY` — free key from [currentsapi.services](https://currentsapi.services/)
+   - `TWELVEDATA_API_KEY` — free key from [twelvedata.com](https://twelvedata.com/)
+   - `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` — a Gmail [App Password](https://myaccount.google.com/apppasswords) (requires 2-Step Verification enabled)
+3. Edit `config/interests.yaml` with your own interest keywords, and `config/sources.yaml` if you want different RSS sources.
+4. Test the fetch step: `python scripts/fetch_headlines.py` (writes `output/latest.json`).
+5. Test sending: `python scripts/send_email.py --subject "Test" --html-file path/to/body.html`.
+
+## Project structure
+
+```
+config/
+  interests.yaml    # personalized interest keywords, grouped by category
+  sources.yaml       # RSS feeds + API config per category
+  tickers.json        # stock watchlist, updated via email replies
+scripts/
+  fetch_headlines.py  # deterministic fetch + filter + tag
+  send_email.py        # SMTP send utility
+agent_instructions.md  # the daily selection/composition policy the scheduled agent follows
+```

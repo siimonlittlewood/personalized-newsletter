@@ -1,0 +1,41 @@
+# Personalized-newsletter interest keywords, grouped by category.
+# Edit freely — these drive the 80% "personalized" portion of each morning's newsletter.
+# Keywords are matched against headline/description text (case-insensitive, substring/fuzzy).
+
+sports:
+  - Toronto Raptors
+  - NBA
+  - Edmonton Oilers
+  - NHL
+  - NFL
+  - general sports news
+
+fashion:
+  - archive fashion
+  - vintage fashion
+  - fashion
+
+tech:
+  - artificial intelligence
+  - machine learning
+  - data science
+  - big tech
+
+music:
+  - music
+  - rap
+  - hip hop
+  - electronic music
+  - DJing
+  - DJ culture
+
+fitness:
+  - fitness
+  - strength training
+  - weightlifting
+
+society:
+  - social media trends
+  - economics
+  - Canadian politics
+  - general news

@@ -1,0 +1,80 @@
+# Data sources for the newsletter pipeline.
+# Free-tier notes are recorded here since they determine call budgets in fetch_headlines.py.
+
+apis:
+  currents:
+    # https://currentsapi.services/ - 1,000 req/day free, commercial use allowed
+    base_url: https://api.currentsapi.services/v1/latest-news
+    categories: [world, business, technology, sports, politics]
+
+  twelvedata:
+    # https://twelvedata.com/ - 800 req/day free.
+    # IMPORTANT (found by testing, not documented clearly): the free tier only
+    # covers US-listed symbols. Raw indices (e.g. GSPTSE) and non-US-exchange
+    # symbols (e.g. XIC.TO) 404 with "available starting with the Grow plan."
+    # So: US indices go through Twelve Data via liquid ETF proxies (SPY/QQQ),
+    # and anything Canadian/international goes through yfinance instead (see
+    # fetch_headlines.py fetch_market() for the routing logic).
+    base_url: https://api.twelvedata.com
+    indices:
+      - symbol: SPY
+        label: S&P 500 (SPY ETF proxy)
+        provider: twelvedata
+      - symbol: QQQ
+        label: Nasdaq (QQQ ETF proxy)
+        provider: twelvedata
+      - symbol: ^GSPTSE
+        label: TSX Composite
+        provider: yfinance
+
+# RSS feeds for niche interests where general news APIs have thin coverage.
+# Each feed is tagged with the interests.yaml category it feeds into.
+rss_feeds:
+  - url: https://raptorsrepublic.com/feed
+    category: sports
+    label: Raptors Republic
+
+  - url: https://oilersnation.com/feed
+    category: sports
+    label: OilersNation
+
+  - url: https://ra.co/xml/rss.xml
+    category: music
+    label: Resident Advisor News
+
+  - url: https://mixmag.net/rss.xml
+    category: music
+    label: Mixmag
+
+  - url: https://feeds.feedburner.com/Djmag-LatestNews
+    category: music
+    label: DJ Mag
+
+  - url: https://hiphopdx.com/rss/news.xml
+    category: music
+    label: HipHopDX
+
+  - url: https://pitchfork.com/feed/feed-news/rss
+    category: music
+    label: Pitchfork
+
+  - url: https://hypebeast.com/feed
+    category: fashion
+    label: Hypebeast
+
+  - url: https://www.highsnobiety.com/feeds/rss
+    category: fashion
+    label: Highsnobiety
+
+  - url: https://fashionista.com/.rss/feed/28e21eb8-20ac-4617-a448-e845081591ca.xml
+    category: fashion
+    label: Fashionista
+
+  - url: https://fitnessvolt.com/feed/
+    category: fitness
+    label: FitnessVolt
+
+  # TODO: no dedicated vintage/archive-fashion feed found yet — candidates
+  # checked (Glamour Daze, Chronically Vintage) don't have live RSS. The
+  # 3 general fashion feeds above should still surface some archive/vintage
+  # coverage via keyword matching; revisit if that proves too thin.

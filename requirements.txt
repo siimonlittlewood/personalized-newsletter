@@ -1,0 +1,6 @@
+requests
+pyyaml
+feedparser
+python-dotenv
+yfinance
+python-dateutil
