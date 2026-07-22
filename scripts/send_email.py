@@ -42,6 +42,13 @@ def _get_access_token():
         },
         timeout=15,
     )
+    if resp.status_code == 400 and "invalid_grant" in resp.text:
+        raise RuntimeError(
+            "Gmail refresh token was rejected (expired or revoked) — "
+            "re-run scripts/gmail_oauth_setup.py to mint a new one and "
+            "update GMAIL_OAUTH_REFRESH_TOKEN wherever the daily agent's "
+            "env vars are set."
+        )
     resp.raise_for_status()
     return resp.json()["access_token"]
 
