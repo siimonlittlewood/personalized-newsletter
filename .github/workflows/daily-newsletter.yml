@@ -1,0 +1,60 @@
+name: Daily newsletter
+
+on:
+  schedule:
+    # One is 07:45 MDT and the other is 07:45 MST. The local-time guard below
+    # runs exactly one of them.
+    - cron: "45 13 * * *"
+    - cron: "45 14 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Render the newsletter without sending it
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  send-newsletter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: schedule
+        name: Check Edmonton delivery hour
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" && "$(TZ=America/Edmonton date +%H)" != "07" ]]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.schedule.outputs.run == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        if: steps.schedule.outputs.run == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Run newsletter pipeline
+        if: steps.schedule.outputs.run == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CURRENTS_API_KEY: ${{ secrets.CURRENTS_API_KEY }}
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_OAUTH_CLIENT_ID: ${{ secrets.GMAIL_OAUTH_CLIENT_ID }}
+          GMAIL_OAUTH_CLIENT_SECRET: ${{ secrets.GMAIL_OAUTH_CLIENT_SECRET }}
+          GMAIL_OAUTH_REFRESH_TOKEN: ${{ secrets.GMAIL_OAUTH_REFRESH_TOKEN }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.dry_run }}" == "true" ]]; then
+            python scripts/run_newsletter.py --dry-run
+          else
+            python scripts/run_newsletter.py
+          fi
