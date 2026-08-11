@@ -1,6 +1,7 @@
+import json
 import unittest
 
-from scripts.compose_newsletter import NewsletterValidationError, render_newsletter, validate_newsletter
+from scripts.compose_newsletter import NewsletterValidationError, _request, render_newsletter, validate_newsletter
 
 
 ARTICLES = {
@@ -24,7 +25,7 @@ ARTICLES = {
 def draft(**overrides):
     value = {
         "subject": "Morning briefing",
-        "for_you": [{"article_id": "h1", "category": "sports", "summary": "A <summary>."}],
+        "for_you": [{"article_id": "h1", "summary": "A <summary>."}],
         "general": [{"article_id": "h2", "summary": "General news."}],
         "market_summary": "Markets were mixed.",
         "footer": "Sports was the only active category today.",
@@ -42,7 +43,7 @@ class NewsletterValidationTests(unittest.TestCase):
         self.assertNotIn("javascript:", html)
 
     def test_rejects_unknown_or_duplicate_articles(self):
-        unknown = draft(for_you=[{"article_id": "missing", "category": "sports", "summary": "x"}])
+        unknown = draft(for_you=[{"article_id": "missing", "summary": "x"}])
         with self.assertRaises(NewsletterValidationError):
             validate_newsletter(unknown, ARTICLES)
         duplicate = draft(general=[{"article_id": "h1", "summary": "x"}])
@@ -51,12 +52,28 @@ class NewsletterValidationTests(unittest.TestCase):
 
     def test_rejects_category_cap_violation(self):
         articles = {**ARTICLES, "h3": {**ARTICLES["h2"], "article_id": "h3"}, "h4": {**ARTICLES["h2"], "article_id": "h4"}}
-        for_you = [
-            {"article_id": article_id, "category": "sports", "summary": "x"}
-            for article_id in ("h1", "h3", "h4")
-        ]
+        for_you = [{"article_id": article_id, "summary": "x"} for article_id in ("h1", "h3", "h4")]
         with self.assertRaises(NewsletterValidationError):
             validate_newsletter(draft(for_you=for_you, general=[]), articles)
+
+    def test_rejects_untagged_for_you_article(self):
+        articles = {**ARTICLES, "h3": {**ARTICLES["h2"], "article_id": "h3", "matched_interests": []}}
+        with self.assertRaises(NewsletterValidationError):
+            validate_newsletter(draft(for_you=[{"article_id": "h3", "summary": "x"}], general=[]), articles)
+
+    def test_retry_includes_the_rejected_draft(self):
+        captured = {}
+
+        class Responses:
+            def create(self, **kwargs):
+                captured.update(kwargs)
+                return type("Response", (), {"output_text": json.dumps(draft())})()
+
+        client = type("Client", (), {"responses": Responses()})()
+        previous = draft(for_you=[{"article_id": "missing", "summary": "x"}])
+        _request(client, "candidate input", "Unknown article ID: missing", previous)
+        correction = json.loads(captured["input"][-1]["content"])
+        self.assertEqual(correction["previous_draft"], previous)
 
 
 if __name__ == "__main__":

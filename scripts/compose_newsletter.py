@@ -18,7 +18,7 @@ SCHEMA = {
     "required": ["subject", "for_you", "general", "market_summary", "footer"],
     "properties": {
         "subject": {"type": "string"},
-        "for_you": {"type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["article_id", "category", "summary"], "properties": {"article_id": {"type": "string"}, "category": {"type": "string"}, "summary": {"type": "string"}}}},
+        "for_you": {"type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["article_id", "summary"], "properties": {"article_id": {"type": "string"}, "summary": {"type": "string"}}}},
         "general": {"type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["article_id", "summary"], "properties": {"article_id": {"type": "string"}, "summary": {"type": "string"}}}},
         "market_summary": {"type": "string"},
         "footer": {"type": "string"},
@@ -56,20 +56,21 @@ def validate_newsletter(draft, articles):
     for item in for_you:
         if not isinstance(item, dict):
             raise NewsletterValidationError("For-you entries must be objects.")
-        article_id, category = item.get("article_id"), item.get("category")
+        article_id = item.get("article_id")
         _text(article_id, "for_you.article_id")
-        _text(category, "for_you.category")
         _text(item.get("summary"), "for_you.summary")
         article = articles.get(article_id)
         if not article or article_id in selected:
             raise NewsletterValidationError(f"Invalid or duplicate article ID: {article_id}")
-        if category not in article.get("matched_interests", []):
-            raise NewsletterValidationError(f"{article_id} is not tagged {category!r}.")
+        eligible_categories = article.get("matched_interests", [])
+        if not eligible_categories:
+            raise NewsletterValidationError(f"{article_id} is not eligible for For You.")
+        category = min(eligible_categories, key=lambda value: (category_counts.get(value, 0), value))
         category_counts[category] = category_counts.get(category, 0) + 1
         if category_counts[category] > 2:
             raise NewsletterValidationError(f"More than two items selected for {category}.")
         selected.add(article_id)
-        chosen_for_you.append({**item, "article": article})
+        chosen_for_you.append({**item, "category": category, "article": article})
 
     chosen_general = []
     for item in general:
@@ -117,16 +118,36 @@ def _prompt(payload, articles, policy):
         {key: article.get(key) for key in ("article_id", "title", "description", "source", "url", "matched_interests", "published_at")}
         for article in articles.values()
     ]
-    return json.dumps({"editorial_policy": policy, "candidates": candidates, "market": payload.get("market", {})}, ensure_ascii=False)
+    for_you_candidates = [candidate for candidate in candidates if candidate["matched_interests"]]
+    return json.dumps(
+        {
+            "editorial_policy": policy,
+            "for_you_candidates": for_you_candidates,
+            "general_candidates": candidates,
+            "market": payload.get("market", {}),
+        },
+        ensure_ascii=False,
+    )
 
 
-def _request(client, prompt, correction=None):
+def _request(client, prompt, correction=None, previous_draft=None):
     inputs = [
-        {"role": "system", "content": "Compose a concise personal morning newsletter. Select only supplied article IDs and ground summaries strictly in the supplied title and description. Return the requested JSON only."},
+        {"role": "system", "content": "Compose a concise personal morning newsletter. For for_you, select article IDs only from for_you_candidates; for general, select only from general_candidates. Ground summaries strictly in the supplied title and description. Return the requested JSON only."},
         {"role": "user", "content": prompt},
     ]
     if correction:
-        inputs.append({"role": "user", "content": f"Correct this validation error: {correction}"})
+        inputs.append(
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "previous_draft": previous_draft,
+                        "validation_error": correction,
+                        "instruction": "Return a corrected replacement draft. Do not reuse invalid selections.",
+                    }
+                ),
+            }
+        )
     response = client.responses.create(
         model=MODEL,
         input=inputs,
@@ -149,9 +170,11 @@ def compose(input_path, html_path, metadata_path, *, client=None, policy_path=RO
     prompt = _prompt(payload, articles, policy)
     client = client or OpenAI()
     error = None
+    previous_draft = None
     for _ in range(2):
         try:
-            newsletter = validate_newsletter(_request(client, prompt, error), articles)
+            previous_draft = _request(client, prompt, error, previous_draft)
+            newsletter = validate_newsletter(previous_draft, articles)
             break
         except NewsletterValidationError as exc:
             error = str(exc)
