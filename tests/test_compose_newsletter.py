@@ -27,7 +27,6 @@ def draft(**overrides):
         "subject": "Morning briefing",
         "for_you": [{"article_id": "h1", "summary": "A <summary>."}],
         "general": [{"article_id": "h2", "summary": "General news."}],
-        "market_summary": "Markets were mixed.",
         "footer": "Sports was the only active category today.",
     }
     value.update(overrides)
@@ -37,10 +36,16 @@ def draft(**overrides):
 class NewsletterValidationTests(unittest.TestCase):
     def test_accepts_valid_source_bound_selection(self):
         newsletter = validate_newsletter(draft(), ARTICLES)
-        html = render_newsletter(newsletter)
+        html = render_newsletter(
+            newsletter,
+            {"indices": [{"symbol": "SPY", "percent_change": "1.25"}], "tickers": []},
+        )
         self.assertIn('href="https://example.com/story"', html)
+        self.assertIn("color: #000000", html)
         self.assertIn("A &lt;summary&gt;.", html)
         self.assertNotIn("javascript:", html)
+        self.assertIn("SPY</strong> +1.25%", html)
+        self.assertIn("<small><em>Sports was the only active category today.", html)
 
     def test_rejects_unknown_or_duplicate_articles(self):
         unknown = draft(for_you=[{"article_id": "missing", "summary": "x"}])

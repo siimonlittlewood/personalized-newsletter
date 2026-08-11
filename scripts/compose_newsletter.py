@@ -15,12 +15,11 @@ MODEL = "gpt-5.6-terra"
 SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["subject", "for_you", "general", "market_summary", "footer"],
+    "required": ["subject", "for_you", "general", "footer"],
     "properties": {
         "subject": {"type": "string"},
         "for_you": {"type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["article_id", "summary"], "properties": {"article_id": {"type": "string"}, "summary": {"type": "string"}}}},
         "general": {"type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["article_id", "summary"], "properties": {"article_id": {"type": "string"}, "summary": {"type": "string"}}}},
-        "market_summary": {"type": "string"},
         "footer": {"type": "string"},
     },
 }
@@ -44,7 +43,7 @@ def _text(value, name):
 def validate_newsletter(draft, articles):
     if not isinstance(draft, dict):
         raise NewsletterValidationError("Response must be an object.")
-    for key in ("subject", "market_summary", "footer"):
+    for key in ("subject", "footer"):
         _text(draft.get(key), key)
     for_you, general = draft.get("for_you"), draft.get("general")
     if not isinstance(for_you, list) or not isinstance(general, list):
@@ -102,15 +101,31 @@ def _render_item(item):
     return f"<article><h3>{heading}</h3><p><em>{source}</em></p><p>{summary}</p></article>"
 
 
-def render_newsletter(newsletter):
+def _render_market(market):
+    quotes = list(market.get("indices", [])) + list(market.get("tickers", []))
+    items = []
+    for quote in quotes:
+        symbol = html.escape(str(quote.get("symbol", "")))
+        change = quote.get("percent_change")
+        if not symbol or change is None:
+            continue
+        try:
+            formatted_change = f"{float(change):+.2f}%"
+        except (TypeError, ValueError):
+            continue
+        items.append(f"<span><strong>{symbol}</strong> {html.escape(formatted_change)}</span>")
+    return " &nbsp; | &nbsp; ".join(items) or "<span>No market data available.</span>"
+
+
+def render_newsletter(newsletter, market):
     for_you = "".join(_render_item(item) for item in newsletter["for_you"]) or "<p>No personalized items met today's criteria.</p>"
     general = "".join(_render_item(item) for item in newsletter["general"]) or "<p>No general-news items were selected today.</p>"
-    market = html.escape(newsletter["market_summary"]).replace("\n", "<br>")
     footer = html.escape(newsletter["footer"])
     return f"""<!doctype html>
-<html><body><h1>Your Morning Briefing</h1><h2>For You</h2>{for_you}
-<h2>General News</h2>{general}<h2>Markets</h2><p>{market}</p>
-<footer><p>{footer}</p></footer></body></html>"""
+<html><head><style>a {{ color: #000000; }}</style></head><body>
+<h1>Your Morning Briefing</h1><h2>Markets</h2><p>{_render_market(market)}</p>
+<h2>For You</h2>{for_you}<h2>General News</h2>{general}
+<footer><p><small><em>{footer}</em></small></p></footer></body></html>"""
 
 
 def _prompt(payload, articles, policy):
@@ -124,7 +139,6 @@ def _prompt(payload, articles, policy):
             "editorial_policy": policy,
             "for_you_candidates": for_you_candidates,
             "general_candidates": candidates,
-            "market": payload.get("market", {}),
         },
         ensure_ascii=False,
     )
@@ -181,7 +195,7 @@ def compose(input_path, html_path, metadata_path, *, client=None, policy_path=RO
     else:
         raise NewsletterValidationError(error or "Unable to validate newsletter.")
     html_path.parent.mkdir(parents=True, exist_ok=True)
-    html_path.write_text(render_newsletter(newsletter), encoding="utf-8")
+    html_path.write_text(render_newsletter(newsletter, payload.get("market", {})), encoding="utf-8")
     metadata_path.write_text(json.dumps({"subject": newsletter["subject"]}, indent=2) + "\n", encoding="utf-8")
     return newsletter
 
