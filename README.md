@@ -1,6 +1,6 @@
 # Personalized Newsletter
 
-A daily, AI-curated email newsletter delivered at 7:45 AM America/Edmonton.
+A daily, AI-curated email newsletter scheduled for 12:00 UTC.
 It gathers headlines and market data, selects a balanced briefing with OpenAI,
 and sends the result through Gmail.
 
@@ -17,9 +17,9 @@ The project does not read email replies or modify Gmail labels.
 
 ## Scheduled deployment
 
-GitHub Actions runs [the daily workflow](.github/workflows/daily-newsletter.yml).
-It uses two UTC schedule entries plus an Edmonton local-time guard, so it runs
-at 7:45 AM across daylight-saving changes. Manual dispatch defaults to a dry
+GitHub Actions runs [the daily workflow](.github/workflows/daily-newsletter.yml)
+once daily at 12:00 UTC. Its UTC-time guard accepts starts from 11:00 through
+13:59 UTC to tolerate delayed scheduling. Manual dispatch defaults to a dry
 run, which renders the newsletter without sending it.
 
 Add these repository secrets under **Settings → Secrets and variables → Actions**:
